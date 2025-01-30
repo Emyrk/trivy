@@ -11,13 +11,13 @@ import (
 	"testing"
 	"testing/fstest"
 
-	tfcontext "github.com/aquasecurity/trivy/pkg/iac/terraform/context"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zclconf/go-cty/cty"
 
 	"github.com/aquasecurity/trivy/internal/testutil"
 	"github.com/aquasecurity/trivy/pkg/iac/terraform"
+	tfcontext "github.com/aquasecurity/trivy/pkg/iac/terraform/context"
 	"github.com/aquasecurity/trivy/pkg/log"
 )
 
