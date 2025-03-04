@@ -408,6 +408,8 @@ func (e *evaluator) expandBlockCounts(blocks terraform.Blocks) terraform.Blocks 
 		countAttrVal := countAttr.Value()
 		if !countAttrVal.IsNull() && countAttrVal.IsKnown() && countAttrVal.Type() == cty.Number {
 			count = int(countAttr.AsNumber())
+		} else {
+			continue
 		}
 
 		var clones []cty.Value
