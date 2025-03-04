@@ -152,6 +152,8 @@ func (e *evaluator) EvaluateAll(ctx context.Context) (terraform.Modules, map[str
 
 	submodules := e.evaluateSubmodules(ctx, fsMap)
 
+	e.blocks = e.expandBlocks(e.blocks)
+
 	e.logger.Debug("Starting post-submodules evaluation...")
 	e.evaluateSteps()
 
