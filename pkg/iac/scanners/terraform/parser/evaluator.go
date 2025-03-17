@@ -150,17 +150,19 @@ func (e *evaluator) EvaluateAll(ctx context.Context) (terraform.Modules, map[str
 	e.blocks = e.expandBlocks(e.blocks)
 	e.blocks = e.expandBlocks(e.blocks)
 
-	submodules := e.evaluateSubmodules(ctx, fsMap)
+	// rootModule is initialized here, but not fully evaluated until all submodules are evaluated.
+	// Initializing it up front to keep the module hierarchy of parents correct.
+	rootModule := terraform.NewModule(e.projectRootPath, e.modulePath, e.blocks, e.ignores)
+	submodules := e.evaluateSubmodules(ctx, rootModule, fsMap)
 
 	e.logger.Debug("Starting post-submodules evaluation...")
 	e.evaluateSteps()
 
 	e.logger.Debug("Module evaluation complete.")
-	rootModule := terraform.NewModule(e.projectRootPath, e.modulePath, e.blocks, e.ignores)
 	return append(terraform.Modules{rootModule}, submodules...), fsMap
 }
 
-func (e *evaluator) evaluateSubmodules(ctx context.Context, fsMap map[string]fs.FS) terraform.Modules {
+func (e *evaluator) evaluateSubmodules(ctx context.Context, parent *terraform.Module, fsMap map[string]fs.FS) terraform.Modules {
 	submodules := e.loadSubmodules(ctx)
 
 	if len(submodules) == 0 {
@@ -185,6 +187,14 @@ func (e *evaluator) evaluateSubmodules(ctx context.Context, fsMap map[string]fs.
 
 	var modules terraform.Modules
 	for _, sm := range submodules {
+		// Assign the parent placeholder to any submodules without a parent. Any modules
+		// with a parent already have their correct parent placeholder assigned.
+		for _, submod := range sm.modules {
+			if submod.Parent() == nil {
+				submod.SetParent(parent)
+			}
+		}
+
 		modules = append(modules, sm.modules...)
 		for k, v := range sm.fsMap {
 			fsMap[k] = v
@@ -525,7 +535,6 @@ func (e *evaluator) getValuesByBlockType(blockType string) cty.Value {
 	values := make(map[string]cty.Value)
 
 	for _, b := range blocksOfType {
-
 		switch b.Type() {
 		case "variable": // variables are special in that their value comes from the "default" attribute
 			val, err := e.evaluateVariable(b)
@@ -553,6 +562,11 @@ func (e *evaluator) getValuesByBlockType(blockType string) cty.Value {
 				continue
 			}
 
+			// Data blocks should all be loaded into the top level 'values'
+			// object. The hierarchy of the map is:
+			//  values = map[<type>]map[<name>] = Block
+			// Where Block is the block's attributes as a cty.Object.
+
 			blockMap, ok := values[b.Labels()[0]]
 			if !ok {
 				values[b.Labels()[0]] = cty.ObjectVal(make(map[string]cty.Value))
@@ -564,7 +578,29 @@ func (e *evaluator) getValuesByBlockType(blockType string) cty.Value {
 				valueMap = make(map[string]cty.Value)
 			}
 
+			// If the block reference has a key, that means there is multiple instances of
+			// this block. Example if `count` is used on a block, key will be a 'cty.Number',
+			// and the saved value should be a tuple.
+			ref := b.Reference()
+			rawKey := ref.RawKey()
+			if rawKey.Type().Equals(cty.Number) {
+				existing := valueMap[ref.NameLabel()]
+				asInt, _ := rawKey.AsBigFloat().Int64()
+
+				valueMap[ref.NameLabel()] = insertTupleElement(existing, int(asInt), b.Values())
+			}
+
+			// The default behavior, that being no key or an unimplemented key type, is to
+			// save the block as the name value. The name label value contains the key.
+			//
+			// Eg: If the block has the index '4', the string [4] is contained
+			//     within 'b.Labels()[1]'
+			// TODO: This is always done to maintain backwards compatibility.
+			//       I think this can be omitted if the switch statement above
+			//      sets the appropriate tuple value in the valueMap.
 			valueMap[b.Labels()[1]] = b.Values()
+
+			// Update the map of all blocks with the same type.
 			values[b.Labels()[0]] = cty.ObjectVal(valueMap)
 		}
 	}
