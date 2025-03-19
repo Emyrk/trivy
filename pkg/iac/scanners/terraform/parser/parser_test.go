@@ -2,6 +2,7 @@ package parser
 
 import (
 	"bytes"
+	"context"
 	"io/fs"
 	"log/slog"
 	"os"
