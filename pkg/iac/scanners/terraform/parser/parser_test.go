@@ -1704,6 +1704,37 @@ resource "test_resource" "this" {
 	assert.Equal(t, "test_value", attr.GetRawValue())
 }
 
+func TestCountArguments(t *testing.T) {
+	files := map[string]string{
+		// The order of references and their alphabetical order is important.
+		// d -> b -> c
+		"main.tf": `
+data "d" "foo"{
+    count = 1
+    value = "Index ${count.index}"
+}
+
+data "b" "foo" {
+    count = 1
+    value = data.d.foo[0].value
+}
+
+data "c" "cfoo" {
+  count = 1
+  value = data.b.foo[0].value
+}`,
+	}
+
+	modules := parse(t, files)
+	require.Len(t, modules, 1)
+
+	for _, b := range modules.GetBlocks().OfType("data") {
+		val := b.GetAttribute("value").Value()
+		assert.Truef(t, val.Equals(cty.StringVal("Index 0")).True(),
+			"%q does not match the expected string, got %q", b.FullName(), val.GoString())
+	}
+}
+
 // TestNestedModulesOptions ensures parser options are carried to the nested
 // submodule evaluators.
 // The test will include an invalid module that will fail to download
